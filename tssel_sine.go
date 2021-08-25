@@ -16,6 +16,8 @@ import (
 //   - use '\' symbol to indicate slide
 //   - faded grey text between this chord and next
 //   - can use pdf.SetAlpha()
+// - move on-sine annotations to either the top or bottom if they
+//   directly intersect with a central-axis annotation
 // - new annotation for hammeron
 //   - don't need the whole chord, just the string and number
 //     and maybe an 'h' letter in the along sine annotation
@@ -25,8 +27,6 @@ import (
 //   - Maybe redesign the "central text line" to be the same
 //       as the melody line potentially using 2 or 3 lines
 //       - OR maybe not, just need ~3 to be inserted at the ~ character... should be okay!
-// - move on-sine annotations to either the top or bottom if they
-//   directly intersect with a central-axis annotation
 // - create an amplitude decay factor (flag) allow for decays
 //   to happen in the middle of sine
 //    - also allow for pauses (no sine at all)
@@ -53,6 +53,8 @@ type sineAnnotation struct {
 	ch          rune    // main character
 	subscript   rune    // following subscript character
 	superscript rune    // following superscript character
+	isMelody    bool
+	mel         melody
 }
 
 // NewsineAnnotation creates a new sineAnnotation object
@@ -200,27 +202,45 @@ func (s sine) parseText(lines []string) (reduced []string, elem tssElement, err 
 		}
 		bolded := false
 
+		hasNextCh := pos+1 < len(fl)
+		hasNextNextCh := pos+2 < len(fl)
+		nextCh := ' '
+		nextNextCh := ' '
+		if hasNextCh {
+			nextCh := fl[pos+1]
+		}
+		if hasNextNextCh {
+			nextCh := fl[pos+2]
+		}
+
+		if hasNextCh && (runeIsMod(ch) && unicode.IsNumber(nextCh)) ||
+			(unicode.IsNumber(ch) && runeIsMod(nextCh)) {
+
+			mel := melody{} // XXX
+			alongAxis = append(alongAxis,
+				NewSineAnnotation(float64(pos)/4, false, ch,
+					subscript, superscript, true, mel))
+
+			// XXX need continue or something
+			// but also need to account the pos before continue
+
+		}
+
 		if unicode.IsLetter(ch) &&
 			unicode.IsUpper(ch) {
 
 			bolded = true
 		}
 
-		ch2, ch3 := ' ', ' '
-		if pos+1 < len(fl) {
-			ch2 = rune(fl[pos+1])
-		}
-		if pos+2 < len(fl) {
-			ch3 = rune(fl[pos+2])
-		}
-
 		subscript, superscript := determineChordsSubscriptSuperscript(
-			ch, ch2, ch3)
+			ch, nextCh, nextNextCh)
 
 		alongAxis = append(alongAxis,
 			NewSineAnnotation(float64(pos)/4, bolded, ch,
 				subscript, superscript))
 
+		// sub or superscripts mean that we've already used up the next
+		// characters hence we can advance faster than the for def
 		if subscript != ' ' {
 			pos++
 		}

@@ -5,12 +5,19 @@ import (
 	"unicode"
 )
 
+// TODO
+//  - extras for melody
+//  - '_' for steadyness (streches beyond note)
+//  - 'v' for vibrato
+//  - 'V' for intense vibrato
+//  - '|' for halting singing
+//  - ability to combine '_', 'v', 'V' and '|'
+
 type melodies []melody
 
 var _ tssElement = melodies{}
 
 type melody struct {
-	blank              bool // no melody here, this is just a placeholder
 	num                rune
 	modifierIsAboveNum bool // otherwise below
 	modifier           rune // either '.', '-', or '~'
@@ -112,11 +119,11 @@ func (ms melodies) parseText(lines []string) (reduced []string, elem tssElement,
 					"than numbers and spaces (rune: %v, col: %v)", r, i)
 		}
 		if unicode.IsSpace(r) {
-			msOut = append(msOut, melody{blank: true})
+			msOut = append(msOut, melody{num: ' '})
 			continue
 		}
 
-		m := melody{blank: false, num: r, modifier: ' ', extra: ' '}
+		m := melody{num: r, modifier: ' ', extra: ' '}
 		chAbove, chBelow := ' ', ' '
 		if len(upper) > i && !unicode.IsSpace(rune(upper[i])) {
 			chAbove = rune(upper[i])
@@ -179,7 +186,7 @@ func (ms melodies) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 	yNum := bnd.top + melodyFontH + melodyHPadding*2
 	usedHeight += melodyFontH + melodyHPadding*3
 	for i, melody := range ms {
-		if melody.blank {
+		if melody.num == ' ' {
 			continue
 		}
 
