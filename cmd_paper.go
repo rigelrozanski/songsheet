@@ -1,4 +1,4 @@
-package commands
+package main
 
 import (
 	"fmt"
@@ -18,9 +18,9 @@ import (
 // - sun element
 
 var (
-	SongsheetCmd = &cobra.Command{
-		Use:   "songsheet [elements]",
-		Short: "print songsheet",
+	PaperCmd = &cobra.Command{
+		Use:   "paper [elements]",
+		Short: "generate experimental (unlined) paper",
 		Long: `songsheet elements: 
 	pillar:              PILLAR 
 	horizontal-pillar:   HPILLAR
@@ -36,7 +36,7 @@ var (
 pattern example: 
     COL(elem1;COL(elem2;elem3;ROW(elem4;elem5));elem6)`,
 		Args: cobra.ExactArgs(1),
-		RunE: songsheetCmd,
+		RunE: paperCmd,
 	}
 	padding    = 0.25
 	thickerLW  = 0.017
@@ -50,17 +50,17 @@ pattern example:
 )
 
 func init() {
-	SongsheetCmd.PersistentFlags().BoolVar(
+	PaperCmd.PersistentFlags().BoolVar(
 		&headerFlag, "header", true, "include a header element")
-	SongsheetCmd.PersistentFlags().BoolVar(
+	PaperCmd.PersistentFlags().BoolVar(
 		&mirrorStringsOrderFlag, "mirror", false, "mirror string positions")
-	RootCmd.AddCommand(SongsheetCmd)
+	RootCmd.AddCommand(PaperCmd)
 }
 
 // NOTE for all elements, padding is only added on the right and bottom sides
 // so that the padding is never doubled
 
-func songsheetCmd(cmd *cobra.Command, args []string) error {
+func paperCmd(cmd *cobra.Command, args []string) error {
 
 	pdf := gofpdf.New("P", "in", "Letter", "")
 	pdf.SetMargins(0, 0, 0)
