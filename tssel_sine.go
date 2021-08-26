@@ -16,17 +16,6 @@ import (
 //   - use '\' symbol to indicate slide
 //   - faded grey text between this chord and next
 //   - can use pdf.SetAlpha()
-// - move on-sine annotations to either the top or bottom if they
-//   directly intersect with a central-axis annotation
-// - new annotation for hammeron
-//   - don't need the whole chord, just the string and number
-//     and maybe an 'h' letter in the along sine annotation
-//   - ~3 or -3 would mean 'above the number' vs 3~ 3- meaning 'below'
-//   - still good to keep the existing 'whole chord hammeron'
-//     for any kind of hammeron containing more than one note
-//   - Maybe redesign the "central text line" to be the same
-//       as the melody line potentially using 2 or 3 lines
-//       - OR maybe not, just need ~3 to be inserted at the ~ character... should be okay!
 // - create an amplitude decay factor (flag) allow for decays
 //   to happen in the middle of sine
 //    - also allow for pauses (no sine at all)
@@ -55,6 +44,46 @@ type sineAnnotation struct {
 	superscript rune    // following superscript character
 	isMelody    bool
 	mel         melody
+}
+
+// print the sineAnnotation at the provided location
+func (sa sineAnnotation) printAlongAxis(pdf Pdf, x, y float64, fontH float64) {
+
+	fontPt := GetFontPt(fontH)
+	fontW := GetCourierFontWidthFromHeight(fontH)
+	XsubsupCrunch := fontW * 0.1 // squeeze the sub and super script into the chord a bit
+	fontHSubSup := fontH * subsupSizeMul
+	fontPtSubSup := GetFontPt(fontHSubSup)
+
+	bolded := ""
+	if sa.bolded {
+		bolded = "B"
+	}
+	pdf.SetFont("courier", bolded, fontPt)
+
+	if sa.isMelody {
+		x += fontW * 0.16 // weird corrections to make the
+		y -= fontH * 0.15 // numbers feel in the middle of the sine
+		sa.mel.print(pdf, x, y, fontH, ' ', 0)
+		return
+	}
+
+	pdf.Text(x, y, string(sa.ch))
+
+	// print sub or super script if exists
+	if sa.subscript != ' ' || sa.superscript != ' ' {
+		Xsubsup := x + fontW - XsubsupCrunch
+		pdf.SetFont("courier", bolded, fontPtSubSup)
+		if sa.subscript != ' ' {
+			Ysub := y - fontH/2 + fontHSubSup
+			pdf.Text(Xsubsup, Ysub, string(sa.subscript))
+		}
+		if sa.superscript != ' ' {
+			Ysuper := y - fontH/2
+			pdf.Text(Xsubsup, Ysuper, string(sa.superscript))
+		}
+	}
+
 }
 
 // NewsineAnnotation creates a new sineAnnotation object
@@ -204,26 +233,23 @@ func (s sine) parseText(lines []string) (reduced []string, elem tssElement, err 
 
 		hasNextCh := pos+1 < len(fl)
 		hasNextNextCh := pos+2 < len(fl)
-		nextCh := ' '
-		nextNextCh := ' '
+		nextCh, nextNextCh := ' ', ' '
 		if hasNextCh {
-			nextCh := fl[pos+1]
+			nextCh = rune(fl[pos+1])
 		}
 		if hasNextNextCh {
-			nextCh := fl[pos+2]
+			nextNextCh = rune(fl[pos+2])
 		}
 
-		if hasNextCh && (runeIsMod(ch) && unicode.IsNumber(nextCh)) ||
-			(unicode.IsNumber(ch) && runeIsMod(nextCh)) {
-
-			mel := melody{} // XXX
-			alongAxis = append(alongAxis,
-				NewSineAnnotation(float64(pos)/4, false, ch,
-					subscript, superscript, true, mel))
-
-			// XXX need continue or something
-			// but also need to account the pos before continue
-
+		// check if it's a melody
+		if hasNextCh {
+			mel, success := NewMelodyFromTwoChars(ch, nextCh)
+			if success {
+				sa := sineAnnotation{position: float64(pos) / 4, isMelody: true, mel: mel}
+				alongAxis = append(alongAxis, sa)
+				pos++
+				continue
+			}
 		}
 
 		if unicode.IsLetter(ch) &&
@@ -352,39 +378,12 @@ func (s sine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 	// (max multiplier would be 2 as the text is
 	// centered between the positive and neg amplitude)
 	fontH := amplitude * 1.7
-
 	fontW := GetCourierFontWidthFromHeight(fontH)
-	fontPt := GetFontPt(fontH)
-	fontHSubSup := fontH * subsupSizeMul
-	fontPtSubSup := GetFontPt(fontHSubSup)
-
-	XsubsupCrunch := fontW * 0.1 // squeeze the sub and super script into the chord a bit
 
 	for _, aa := range s.alongAxis {
-
 		X := xStart + (aa.position/s.humps)*width - fontW/2
 		Y := yStart + fontH/2 // so the text is centered along the sine axis
-		bolded := ""
-		if aa.bolded {
-			bolded = "B"
-		}
-		pdf.SetFont("courier", bolded, fontPt)
-		pdf.Text(X, Y, string(aa.ch))
-
-		// print sub or super script if exists
-		if aa.subscript != ' ' || aa.superscript != ' ' {
-			Xsubsup := X + fontW - XsubsupCrunch
-			pdf.SetFont("courier", bolded, fontPtSubSup)
-			if aa.subscript != ' ' {
-				Ysub := Y - fontH/2 + fontHSubSup
-				pdf.Text(Xsubsup, Ysub, string(aa.subscript))
-			}
-			if aa.superscript != ' ' {
-				Ysuper := Y - fontH/2
-				pdf.Text(Xsubsup, Ysuper, string(aa.superscript))
-			}
-		}
-
+		aa.printAlongAxis(pdf, X, Y, fontH)
 	}
 
 	// print the characters along the sine curve
@@ -406,6 +405,23 @@ func (s sine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 			bolded = "B"
 		} else {
 			pdf.SetLineWidth(thinishLW)
+		}
+
+		// move the character if it intersects with
+		// on of the characters along the axis
+
+		rem := as.position - math.Trunc(as.position)
+		if rem == 0.25 || rem == 0.75 {
+			for _, aa := range s.alongAxis {
+				if as.position == aa.position {
+					eqY = amplitude // send it to the top
+					break
+				}
+				if as.position == aa.position+0.25 && (aa.subscript != ' ' || aa.superscript != ' ') {
+					eqY = amplitude // send it to the top
+					break
+				}
+			}
 		}
 
 		// character height which extends beyond the sine curve
@@ -462,7 +478,19 @@ func (s sine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 			pdf.SetFont("courier", bolded, fontPt)
 			tipX := xStart + eqX
 			tipY := yStart - eqY
-			pdf.Text(tipX-(w/2), tipY+(h/2), string(as.ch))
+			shiftH := h / 2
+
+			// shift the character to the outside of the curve if on
+			// one of the peaks/troughs
+			rem := as.position - math.Trunc(as.position)
+			if rem == 0.5 {
+				shiftH += h / 2
+			}
+			if rem == 0.0 {
+				shiftH -= h / 2
+			}
+
+			pdf.Text(tipX-(w/2), tipY+shiftH, string(as.ch))
 		}
 	}
 
