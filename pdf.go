@@ -11,6 +11,7 @@ type Pdf interface {
 	Text(x, y float64, txtStr string)
 	Circle(x, y, r float64, styleStr string)
 	Curve(x0, y0, cx, cy, x1, y1 float64, styleStr string)
+	SetAlpha(alpha float64, blendModeStr string)
 }
 
 // dummyPdf fulfills the interface Pdf (DNETL)
@@ -26,3 +27,4 @@ func (d dummyPdf) SetFont(familyStr, styleStr string, size float64)      {}
 func (d dummyPdf) Text(x, y float64, txtStr string)                      {}
 func (d dummyPdf) Circle(x, y, r float64, styleStr string)               {}
 func (d dummyPdf) Curve(x0, y0, cx, cy, x1, y1 float64, styleStr string) {}
+func (d dummyPdf) SetAlpha(alpha float64, blendModeStr string)           {}

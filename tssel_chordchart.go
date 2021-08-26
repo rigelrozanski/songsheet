@@ -97,10 +97,11 @@ func (c chordChart) parseText(lines []string) (reduced []string, elem tssElement
 
 // test to see whether or not the second and third inputs are
 // superscript and/subscript to the first input if it is a chord
-func determineChordsSubscriptSuperscript(ch1, ch2, ch3 rune) (subscript, superscript rune) {
+func determineChordsSubscriptSuperscriptSlide(ch1, ch2, ch3, ch4 rune) (subscript, superscript rune, slide bool) {
 	if !(unicode.IsLetter(ch1) && unicode.IsUpper(ch1)) {
-		return ' ', ' '
+		return ' ', ' ', false
 	}
+	slide = false
 	subscript, superscript = ' ', ' '
 	if unicode.IsNumber(ch2) || (unicode.IsLetter(ch2) && unicode.IsLower(ch2)) {
 		subscript = ch2
@@ -108,7 +109,14 @@ func determineChordsSubscriptSuperscript(ch1, ch2, ch3 rune) (subscript, supersc
 	if unicode.IsNumber(ch3) || (unicode.IsLetter(ch3) && unicode.IsLower(ch3)) {
 		superscript = ch3
 	}
-	return subscript, superscript
+
+	if (subscript != ' ' && (ch3 == '/' || ch3 == '\\')) ||
+		(superscript != ' ' && (ch4 == '/' || ch4 == '\\')) {
+
+		slide = true
+	}
+
+	return subscript, superscript, slide
 }
 
 func (c chordChart) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
@@ -166,11 +174,11 @@ func (c chordChart) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 			xModStart := xStart + xMar
 			xModEnd := xStart + xMar + melodyFontW
 			xModMid := (xModStart + xModEnd) / 2
-			yMod := y + spacing/4 + melodyHPadding/2
-			yModMid := yMod + melodyHPadding*2
+			yMod := y + spacing/4 + melodyHPadding
+			yModMid := yMod - melodyHPadding*2
 			if i == 0 { // above
-				yMod = y - spacing/4 - melodyHPadding/2
-				yModMid = yMod - melodyHPadding*2
+				yMod = y - spacing/4 - melodyHPadding
+				yModMid = yMod + melodyHPadding*2
 			}
 			pdf.SetLineWidth(thinishLW)
 			pdf.Curve(xModStart, yMod, xModMid, yModMid, xModEnd, yMod, "")
@@ -232,8 +240,8 @@ func (c chordChart) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 			ch1 = rune(chd.name[0])
 		}
 
-		subscriptCh, superscriptCh := determineChordsSubscriptSuperscript(
-			ch1, ch2, ch3)
+		subscriptCh, superscriptCh, _ := determineChordsSubscriptSuperscriptSlide(
+			ch1, ch2, ch3, ' ')
 
 		xLabel := x - fontWidth/2
 		yLabel := yBottomEnd + fontHeight + labelPadding

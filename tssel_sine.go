@@ -12,10 +12,6 @@ import (
 )
 
 // TODO
-// - slides between chords (central text):
-//   - use '\' symbol to indicate slide
-//   - faded grey text between this chord and next
-//   - can use pdf.SetAlpha()
 // - create an amplitude decay factor (flag) allow for decays
 //   to happen in the middle of sine
 //    - also allow for pauses (no sine at all)
@@ -42,6 +38,7 @@ type sineAnnotation struct {
 	ch          rune    // main character
 	subscript   rune    // following subscript character
 	superscript rune    // following superscript character
+	slide       bool    // annotation calls for a slide AFTER the ch
 	isMelody    bool
 	mel         melody
 }
@@ -88,13 +85,14 @@ func (sa sineAnnotation) printAlongAxis(pdf Pdf, x, y float64, fontH float64) {
 
 // NewsineAnnotation creates a new sineAnnotation object
 func NewSineAnnotation(position float64, bolded bool,
-	ch, subscript, superscript rune) sineAnnotation {
+	ch, subscript, superscript rune, slide bool) sineAnnotation {
 	return sineAnnotation{
 		position:    position,
 		bolded:      bolded,
 		ch:          ch,
 		subscript:   subscript,
 		superscript: superscript,
+		slide:       slide,
 	}
 }
 
@@ -233,12 +231,16 @@ func (s sine) parseText(lines []string) (reduced []string, elem tssElement, err 
 
 		hasNextCh := pos+1 < len(fl)
 		hasNextNextCh := pos+2 < len(fl)
-		nextCh, nextNextCh := ' ', ' '
+		hasNextNextNextCh := pos+3 < len(fl)
+		nextCh, nextNextCh, nextNextNextCh := ' ', ' ', ' '
 		if hasNextCh {
 			nextCh = rune(fl[pos+1])
 		}
 		if hasNextNextCh {
 			nextNextCh = rune(fl[pos+2])
+		}
+		if hasNextNextNextCh {
+			nextNextNextCh = rune(fl[pos+3])
 		}
 
 		// check if it's a melody
@@ -258,12 +260,12 @@ func (s sine) parseText(lines []string) (reduced []string, elem tssElement, err 
 			bolded = true
 		}
 
-		subscript, superscript := determineChordsSubscriptSuperscript(
-			ch, nextCh, nextNextCh)
+		subscript, superscript, slide := determineChordsSubscriptSuperscriptSlide(
+			ch, nextCh, nextNextCh, nextNextNextCh)
 
 		alongAxis = append(alongAxis,
 			NewSineAnnotation(float64(pos)/4, bolded, ch,
-				subscript, superscript))
+				subscript, superscript, slide))
 
 		// sub or superscripts mean that we've already used up the next
 		// characters hence we can advance faster than the for def
@@ -271,6 +273,9 @@ func (s sine) parseText(lines []string) (reduced []string, elem tssElement, err 
 			pos++
 		}
 		if superscript != ' ' {
+			pos++
+		}
+		if slide {
 			pos++
 		}
 	}
@@ -293,7 +298,7 @@ func (s sine) parseText(lines []string) (reduced []string, elem tssElement, err 
 		}
 
 		alongSine = append(alongSine,
-			NewSineAnnotation(float64(pos)/4, bolded, ch, ' ', ' '))
+			NewSineAnnotation(float64(pos)/4, bolded, ch, ' ', ' ', false))
 	}
 
 	sas.humps = humps
@@ -380,10 +385,35 @@ func (s sine) printPDF(pdf Pdf, bnd bounds) (reduced bounds) {
 	fontH := amplitude * 1.7
 	fontW := GetCourierFontWidthFromHeight(fontH)
 
-	for _, aa := range s.alongAxis {
+	for i, aa := range s.alongAxis {
 		X := xStart + (aa.position/s.humps)*width - fontW/2
 		Y := yStart + fontH/2 // so the text is centered along the sine axis
 		aa.printAlongAxis(pdf, X, Y, fontH)
+
+		// print slide
+		if aa.slide && i+1 < len(s.alongAxis) {
+			posStep := 0.05
+			posStart := aa.position
+			posEnd := s.alongAxis[i+1].position
+			posSteps := (posEnd - posStart) / posStep
+
+			alphaStart := 0.07
+			alphaEnd := 0.0
+			alphaStep := (alphaEnd - alphaStart) / posSteps
+
+			alpha := alphaStart
+			for p := posStart; p < posEnd; p += posStep {
+				if alpha < 0 {
+					alpha = 0 // can happen due to rounding errors
+				}
+				pdf.SetAlpha(alpha, "")
+				X := xStart + (p/s.humps)*width - fontW/2
+				aa.printAlongAxis(pdf, X, Y, fontH)
+
+				alpha += alphaStep
+			}
+			pdf.SetAlpha(1.0, "")
+		}
 	}
 
 	// print the characters along the sine curve
